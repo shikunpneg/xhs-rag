@@ -140,3 +140,288 @@ jobs:
         if: failure()
         run: |
           echo "## 执行失败"
+          name: Update XHS Cookie & Crawl
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 每天凌晨2点执行
+  workflow_dispatch:  # 支持手动触发
+    inputs:
+      user_id:
+        description: '小红书用户ID（可选）'
+        required: false
+        default: ''
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: "7c8778315993ece8b0f06929771a3f4f"
+  WORKER_NAME: xhs-rag
+  USER_ID: ${{ github.event.inputs.user_id || '5bd9405f6b58b737b5401d2e' }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  update-cookie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup Playwright environment (isolated)
+        run: |
+          # 关键修复：先把项目的package.json移走，防止npm读到不需要的依赖
+          mkdir -p /tmp/project-backup
+          if [ -f "${{ github.workspace }}/package.json" ]; then
+            cp "${{ github.workspace }}/package.json" /tmp/project-backup/
+            rm "${{ github.workspace }}/package.json"
+          fi
+          if [ -f "${{ github.workspace }}/package-lock.json" ]; then
+            cp "${{ github.workspace }}/package-lock.json" /tmp/project-backup/
+            rm "${{ github.workspace }}/package-lock.json"
+          fi
+          # 在隔离目录安装Playwright
+          mkdir -p /tmp/playwright-runner
+          cd /tmp/playwright-runner
+          npm init -y
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Get fresh cookies from Xiaohongshu
+        id: get-cookies
+        run: |
+          cd /tmp/playwright-runner
+          
+          cat > get-cookies.js << 'JSEOF'
+          const { chromium } = require('playwright');
+          
+          (async () => {
+            const browser = await chromium.launch({ 
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+            
+            await page.setExtraHTTPHeaders({
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            });
+            
+            console.log('正在访问小红书...');
+            try {
+              await page.goto('https://www.xiaohongshu.com', { 
+                waitUntil: 'networkidle2',
+                timeout: 60000 
+              });
+              
+              await page.waitForTimeout(5000);
+              
+              const cookies = await page.context().cookies();
+              const cookieString = cookies.map(c => c.name + '=' + c.value).join('; ');
+              
+              console.log('SUCCESS');
+              console.log('COOKIE:' + cookieString);
+            } catch (error) {
+              console.log('FAIL:' + error.message);
+              console.log('COOKIE:');
+            }
+            
+            await browser.close();
+          })();
+          JSEOF
+          
+          node get-cookies.js > output.log 2>&1
+          
+          if grep -q "SUCCESS" output.log; then
+            COOKIE=$(grep "^COOKIE:" output.log | sed 's/^COOKIE://')
+            echo "获取到Cookie，长度: ${#COOKIE}"
+            echo "cookie=$COOKIE" >> $GITHUB_OUTPUT
+          else
+            echo "获取Cookie失败"
+            echo "cookie=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Update Cloudflare Worker Secret
+        if: steps.get-cookies.outputs.cookie != ''
+        env:
+          NEW_COOKIE: ${{ steps.get-cookies.outputs.cookie }}
+        run: |
+          echo "$NEW_COOKIE" | wrangler secret put XHS_COOKIE --name $WORKER_NAME
+          echo "Cookie 更新成功"
+
+      - name: Deploy to Cloudflare Workers
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          cd ${{ github.workspace }}/cloudflare-workers
+          wrangler deploy --name $WORKER_NAME
+
+      - name: Trigger crawl
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          curl -X POST "https://xhs-rag.ok2442504.workers.dev/api/crawl" \
+            -H "Content-Type: application/json" \
+            -d '{"user_id":"'$USER_ID'","max_notes":10}'
+
+      - name: Summary
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          echo "## 执行结果"
+          echo "- Cookie 长度: \${{ steps.get-cookies.outputs.cookie.length }}"
+          echo "- 用户ID: $USER_ID"
+          echo "- 状态: 成功"
+
+      - name: Failure Summary
+        if: failure()
+        run: |
+          echo "## 执行失败"
+name: Update XHS Cookie & Crawl
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 每天凌晨2点执行
+  workflow_dispatch:  # 支持手动触发
+    inputs:
+      user_id:
+        description: '小红书用户ID（可选）'
+        required: false
+        default: ''
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: "7c8778315993ece8b0f06929771a3f4f"
+  WORKER_NAME: xhs-rag
+  USER_ID: ${{ github.event.inputs.user_id || '5bd9405f6b58b737b5401d2e' }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  update-cookie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup Playwright environment (isolated)
+        run: |
+          # 关键修复：先把项目的package.json移走，防止npm读到不需要的依赖
+          mkdir -p /tmp/project-backup
+          if [ -f "${{ github.workspace }}/package.json" ]; then
+            cp "${{ github.workspace }}/package.json" /tmp/project-backup/
+            rm "${{ github.workspace }}/package.json"
+          fi
+          if [ -f "${{ github.workspace }}/package-lock.json" ]; then
+            cp "${{ github.workspace }}/package-lock.json" /tmp/project-backup/
+            rm "${{ github.workspace }}/package-lock.json"
+          fi
+          # 在隔离目录安装Playwright
+          mkdir -p /tmp/playwright-runner
+          cd /tmp/playwright-runner
+          npm init -y
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Get fresh cookies from Xiaohongshu
+        id: get-cookies
+        run: |
+          cd /tmp/playwright-runner
+          
+          cat > get-cookies.js << 'JSEOF'
+          const { chromium } = require('playwright');
+          
+          (async () => {
+            const browser = await chromium.launch({ 
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+            
+            await page.setExtraHTTPHeaders({
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            });
+            
+            console.log('正在访问小红书...');
+            try {
+              await page.goto('https://www.xiaohongshu.com', { 
+                waitUntil: 'networkidle2',
+                timeout: 60000 
+              });
+              
+              await page.waitForTimeout(5000);
+              
+              const cookies = await page.context().cookies();
+              const cookieString = cookies.map(c => c.name + '=' + c.value).join('; ');
+              
+              console.log('SUCCESS');
+              console.log('COOKIE:' + cookieString);
+            } catch (error) {
+              console.log('FAIL:' + error.message);
+              console.log('COOKIE:');
+            }
+            
+            await browser.close();
+          })();
+          JSEOF
+          
+          node get-cookies.js > output.log 2>&1
+          
+          if grep -q "SUCCESS" output.log; then
+            COOKIE=$(grep "^COOKIE:" output.log | sed 's/^COOKIE://')
+            echo "获取到Cookie，长度: ${#COOKIE}"
+            echo "cookie=$COOKIE" >> $GITHUB_OUTPUT
+          else
+            echo "获取Cookie失败"
+            echo "cookie=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Update Cloudflare Worker Secret
+        if: steps.get-cookies.outputs.cookie != ''
+        env:
+          NEW_COOKIE: ${{ steps.get-cookies.outputs.cookie }}
+        run: |
+          echo "$NEW_COOKIE" | wrangler secret put XHS_COOKIE --name $WORKER_NAME
+          echo "Cookie 更新成功"
+
+      - name: Deploy to Cloudflare Workers
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          cd ${{ github.workspace }}/cloudflare-workers
+          wrangler deploy --name $WORKER_NAME
+
+      - name: Trigger crawl
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          curl -X POST "https://xhs-rag.ok2442504.workers.dev/api/crawl" \
+            -H "Content-Type: application/json" \
+            -d '{"user_id":"'$USER_ID'","max_notes":10}'
+
+      - name: Summary
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          echo "## 执行结果"
+          echo "- Cookie 长度: \${{ steps.get-cookies.outputs.cookie.length }}"
+          echo "- 用户ID: $USER_ID"
+          echo "- 状态: 成功"
+
+      - name: Failure Summary
+        if: failure()
+        run: |
+          echo "## 执行失败"
+
