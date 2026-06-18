@@ -31,12 +31,23 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Setup Playwright environment
+      - name: Setup Playwright environment (isolated)
         run: |
+          # 关键修复：先把项目的package.json移走，防止npm读到不需要的依赖
+          mkdir -p /tmp/project-backup
+          if [ -f "${{ github.workspace }}/package.json" ]; then
+            cp "${{ github.workspace }}/package.json" /tmp/project-backup/
+            rm "${{ github.workspace }}/package.json"
+          fi
+          if [ -f "${{ github.workspace }}/package-lock.json" ]; then
+            cp "${{ github.workspace }}/package-lock.json" /tmp/project-backup/
+            rm "${{ github.workspace }}/package-lock.json"
+          fi
+          # 在隔离目录安装Playwright
           mkdir -p /tmp/playwright-runner
           cd /tmp/playwright-runner
-          printf '{"name":"runner","private":true}' > package.json
-          npm install --silent playwright
+          npm init -y
+          npm install playwright
           npx playwright install chromium --with-deps
 
       - name: Get fresh cookies from Xiaohongshu
