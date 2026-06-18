@@ -34,7 +34,7 @@ jobs:
 
       - name: Install Playwright
         run: |
-          npm install playwright
+          npm install --no-save playwright
           npx playwright install chromium --with-deps
 
       - name: Get fresh cookies from Xiaohongshu
