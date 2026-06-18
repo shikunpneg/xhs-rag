@@ -15,14 +15,13 @@ env:
   CLOUDFLARE_ACCOUNT_ID: "7c8778315993ece8b0f06929771a3f4f"
   WORKER_NAME: xhs-rag
   USER_ID: ${{ github.event.inputs.user_id || '5bd9405f6b58b737b5401d2e' }}
-  # 强制使用Node.js 24运行JavaScript Actions，兼容当前@v4版本
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   update-cookie:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,15 +31,20 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install Playwright
+      - name: Setup Playwright environment
         run: |
-          npm install --no-save playwright
+          mkdir -p /tmp/playwright-runner
+          cd /tmp/playwright-runner
+          printf '{"name":"runner","private":true}' > package.json
+          npm install --silent playwright
           npx playwright install chromium --with-deps
 
       - name: Get fresh cookies from Xiaohongshu
         id: get-cookies
         run: |
-          node << 'EOF'
+          cd /tmp/playwright-runner
+          
+          cat > get-cookies.js << 'JSEOF'
           const { chromium } = require('playwright');
           
           (async () => {
@@ -62,59 +66,66 @@ jobs:
                 timeout: 60000 
               });
               
-              // 等待页面稳定
               await page.waitForTimeout(5000);
               
               const cookies = await page.context().cookies();
               const cookieString = cookies.map(c => c.name + '=' + c.value).join('; ');
               
-              console.log('✅ 获取到 Cookie，长度:', cookieString.length);
-              console.log('::set-output name=cookie::' + cookieString);
+              console.log('SUCCESS');
+              console.log('COOKIE:' + cookieString);
             } catch (error) {
-              console.log('❌ 访问失败:', error.message);
-              console.log('::set-output name=cookie::');
+              console.log('FAIL:' + error.message);
+              console.log('COOKIE:');
             }
             
             await browser.close();
           })();
-          EOF
+          JSEOF
+          
+          node get-cookies.js > output.log 2>&1
+          
+          if grep -q "SUCCESS" output.log; then
+            COOKIE=$(grep "^COOKIE:" output.log | sed 's/^COOKIE://')
+            echo "获取到Cookie，长度: ${#COOKIE}"
+            echo "cookie=$COOKIE" >> $GITHUB_OUTPUT
+          else
+            echo "获取Cookie失败"
+            echo "cookie=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
 
       - name: Update Cloudflare Worker Secret
         if: steps.get-cookies.outputs.cookie != ''
         env:
           NEW_COOKIE: ${{ steps.get-cookies.outputs.cookie }}
         run: |
-          echo "更新 Cloudflare 环境变量..."
-          npx wrangler secret put XHS_COOKIE --name $WORKER_NAME <<< "$NEW_COOKIE"
-          echo "✅ Cookie 更新成功"
+          echo "$NEW_COOKIE" | wrangler secret put XHS_COOKIE --name $WORKER_NAME
+          echo "Cookie 更新成功"
 
       - name: Deploy to Cloudflare Workers
         if: steps.get-cookies.outputs.cookie != ''
         run: |
-          echo "部署 Worker..."
-          npx wrangler deploy --name $WORKER_NAME
-          echo "✅ 部署成功"
+          cd ${{ github.workspace }}/cloudflare-workers
+          wrangler deploy --name $WORKER_NAME
 
-      - name: Trigger crawl (optional)
+      - name: Trigger crawl
         if: steps.get-cookies.outputs.cookie != ''
         run: |
-          echo "触发笔记爬取..."
           curl -X POST "https://xhs-rag.ok2442504.workers.dev/api/crawl" \
             -H "Content-Type: application/json" \
             -d '{"user_id":"'$USER_ID'","max_notes":10}'
-          echo "✅ 爬取触发成功"
 
       - name: Summary
         if: steps.get-cookies.outputs.cookie != ''
         run: |
-          echo "## 📋 执行结果"
-          echo "- Cookie 长度: ${{ steps.get-cookies.outputs.cookie.length }}"
+          echo "## 执行结果"
+          echo "- Cookie 长度: \${{ steps.get-cookies.outputs.cookie.length }}"
           echo "- 用户ID: $USER_ID"
-          echo "- 状态: ✅ 成功"
-        shell: bash
+          echo "- 状态: 成功"
 
       - name: Failure Summary
         if: failure()
         run: |
-          echo "## ❌ 执行失败"
-          echo "- Cookie 获取: ${{ steps.get-cookies.outputs.cookie && '成功' || '失败' }}"
+          echo "## 执行失败"
