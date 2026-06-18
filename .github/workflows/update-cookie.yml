@@ -15,6 +15,8 @@ env:
   CLOUDFLARE_ACCOUNT_ID: "7c8778315993ece8b0f06929771a3f4f"
   WORKER_NAME: xhs-rag
   USER_ID: ${{ github.event.inputs.user_id || '5bd9405f6b58b737b5401d2e' }}
+  # 强制使用Node.js 24运行JavaScript Actions，兼容当前@v4版本
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   update-cookie:
@@ -28,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install Playwright
         run: |
