@@ -1,0 +1,7 @@
+{
+  "binding": "VECTORIZE",
+  "index_name": "xhs-embeddings",
+  "metric": "cosine",
+  "dimension": 768,
+  "description": "小红书笔记向量索引"
+}

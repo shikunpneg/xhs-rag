@@ -1,0 +1,118 @@
+name: Update XHS Cookie & Crawl
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 每天凌晨2点执行
+  workflow_dispatch:  # 支持手动触发
+    inputs:
+      user_id:
+        description: '小红书用户ID（可选）'
+        required: false
+        default: ''
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: "7c8778315993ece8b0f06929771a3f4f"
+  WORKER_NAME: xhs-rag
+  USER_ID: ${{ github.event.inputs.user_id || '5bd9405f6b58b737b5401d2e' }}
+
+jobs:
+  update-cookie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Get fresh cookies from Xiaohongshu
+        id: get-cookies
+        run: |
+          node << 'EOF'
+          const { chromium } = require('playwright');
+          
+          (async () => {
+            const browser = await chromium.launch({ 
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+            
+            await page.setExtraHTTPHeaders({
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            });
+            
+            console.log('正在访问小红书...');
+            try {
+              await page.goto('https://www.xiaohongshu.com', { 
+                waitUntil: 'networkidle2',
+                timeout: 60000 
+              });
+              
+              // 等待页面稳定
+              await page.waitForTimeout(5000);
+              
+              const cookies = await page.context().cookies();
+              const cookieString = cookies.map(c => c.name + '=' + c.value).join('; ');
+              
+              console.log('✅ 获取到 Cookie，长度:', cookieString.length);
+              console.log('::set-output name=cookie::' + cookieString);
+            } catch (error) {
+              console.log('❌ 访问失败:', error.message);
+              console.log('::set-output name=cookie::');
+            }
+            
+            await browser.close();
+          })();
+          EOF
+
+      - name: Update Cloudflare Worker Secret
+        if: steps.get-cookies.outputs.cookie != ''
+        env:
+          NEW_COOKIE: ${{ steps.get-cookies.outputs.cookie }}
+        run: |
+          echo "更新 Cloudflare 环境变量..."
+          npx wrangler secret put XHS_COOKIE --name $WORKER_NAME <<< "$NEW_COOKIE"
+          echo "✅ Cookie 更新成功"
+
+      - name: Deploy to Cloudflare Workers
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          echo "部署 Worker..."
+          npx wrangler deploy --name $WORKER_NAME
+          echo "✅ 部署成功"
+
+      - name: Trigger crawl (optional)
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          echo "触发笔记爬取..."
+          curl -X POST "https://xhs-rag.ok2442504.workers.dev/api/crawl" \
+            -H "Content-Type: application/json" \
+            -d '{"user_id":"'$USER_ID'","max_notes":10}'
+          echo "✅ 爬取触发成功"
+
+      - name: Summary
+        if: steps.get-cookies.outputs.cookie != ''
+        run: |
+          echo "## 📋 执行结果"
+          echo "- Cookie 长度: ${{ steps.get-cookies.outputs.cookie.length }}"
+          echo "- 用户ID: $USER_ID"
+          echo "- 状态: ✅ 成功"
+        shell: bash
+
+      - name: Failure Summary
+        if: failure()
+        run: |
+          echo "## ❌ 执行失败"
+          echo "- Cookie 获取: ${{ steps.get-cookies.outputs.cookie && '成功' || '失败' }}"

@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书 RAG 知识库</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 30px; text-align: center; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 1.1em; }
+        .content { padding: 30px; }
+        .api-status { background: #f0f0f0; padding: 15px; border-radius: 8px; margin-bottom: 30px; display: flex; align-items: center; gap: 10px; }
+        .api-status.connected { background: #e8f5e9; color: #2e7d32; }
+        .api-status.error { background: #ffebee; color: #c62828; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: #ff9800; }
+        .status-dot.connected { background: #4caf50; }
+        .status-dot.error { background: #f44336; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+        .tab { padding: 12px 24px; cursor: pointer; border: none; background: none; font-size: 16px; color: #666; border-bottom: 3px solid transparent; transition: all 0.3s; }
+        .tab:hover { color: #667eea; }
+        .tab.active { color: #667eea; border-bottom-color: #667eea; font-weight: 600; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
+        .input-group input, .input-group textarea { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s; }
+        .input-group input:focus, .input-group textarea:focus { outline: none; border-color: #667eea; }
+        .input-group textarea { min-height: 150px; resize: vertical; font-family: inherit; }
+        .btn { padding: 12px 32px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .response { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; display: none; }
+        .response.show { display: block; }
+        .response h3 { color: #333; margin-bottom: 15px; }
+        .response-content { background: white; padding: 15px; border-radius: 8px; line-height: 1.8; white-space: pre-wrap; }
+        .sources { margin-top: 20px; }
+        .source-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #667eea; }
+        .source-item h4 { color: #333; margin-bottom: 8px; }
+        .source-item p { color: #666; line-height: 1.6; }
+        .source-item a { color: #667eea; text-decoration: none; display: inline-block; margin-top: 8px; }
+        .source-item a:hover { text-decoration: underline; }
+        .source-item .score { float: right; font-size: 12px; color: #999; }
+        .loading { display: none; text-align: center; margin-top: 20px; }
+        .loading.show { display: block; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .sentiment-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: 600; margin-bottom: 10px; }
+        .sentiment-positive { background: #e8f5e9; color: #2e7d32; }
+        .sentiment-negative { background: #ffebee; color: #c62828; }
+        .sentiment-neutral { background: #f5f5f5; color: #666; }
+        .keyword-tag { display: inline-block; padding: 4px 12px; background: #e3f2fd; color: #1976d2; border-radius: 16px; margin: 4px; font-size: 14px; }
+        .footer { text-align: center; padding: 20px; background: #f5f5f5; color: #999; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>小红书 RAG 知识库</h1>
+            <p>基于Cloudflare Workers的智能问答系统</p>
+        </div>
+        <div class="content">
+            <div class="api-status" id="apiStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">检查API连接...</span>
+            </div>
+            <div class="tabs">
+                <button class="tab active" data-tab="chat">智能问答</button>
+                <button class="tab" data-tab="crawl">数据采集</button>
+                <button class="tab" data-tab="import">向量导入</button>
+                <button class="tab" data-tab="notes">笔记管理</button>
+                <button class="tab" data-tab="analyze">情感分析</button>
+            </div>
+            <div class="tab-content active" id="chatTab">
+                <div class="input-group">
+                    <label for="chatQuery">您的问题：</label>
+                    <input type="text" id="chatQuery" placeholder="例如：贾浅浅是谁？">
+                </div>
+                <div class="input-group">
+                    <label for="topK">检索数量：</label>
+                    <input type="number" id="topK" value="5" min="1" max="10" style="width: 100px;">
+                </div>
+                <button class="btn btn-primary" id="chatBtn">开始问答</button>
+                <div class="loading" id="chatLoading"><div class="spinner"></div><p>正在检索并生成回答...</p></div>
+                <div class="response" id="chatResponse">
+                    <h3>AI回答：</h3>
+                    <div class="response-content" id="chatAnswer"></div>
+                    <div class="sources" id="chatSources"></div>
+                </div>
+            </div>
+            <div class="tab-content" id="crawlTab">
+                <div class="input-group">
+                    <label for="crawlUserId">小红书账号ID：</label>
+                    <input type="text" id="crawlUserId" placeholder="例如：5d8e2f3a4b5c6d7e8f9a0b1c">
+                    <p style="font-size: 12px; color: #666; margin-top: 5px;">如何获取账号ID？打开小红书用户主页，URL中的数字串即为账号ID</p>
+                </div>
+                <div class="input-group">
+                    <label for="crawlMaxNotes">最大爬取数量：</label>
+                    <input type="number" id="crawlMaxNotes" value="20" min="1" max="100" style="width: 100px;">
+                </div>
+                <button class="btn btn-primary" id="crawlBtn">开始爬取</button>
+                <div class="loading" id="crawlLoading"><div class="spinner"></div><p>正在爬取数据...</p></div>
+                <div class="response" id="crawlResponse">
+                    <h3>采集结果：</h3>
+                    <div class="response-content" id="crawlResult"></div>
+                </div>
+                <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px;">
+                    <h4 style="color: #1976d2; margin-bottom: 10px;">使用说明</h4>
+                    <ul style="color: #333; margin-left: 20px; line-height: 1.8;">
+                        <li>爬取需要在本地运行脚本，前端仅显示状态</li>
+                        <li>请在终端运行：<code style="background: white; padding: 2px 6px; border-radius: 4px;">python api_server.py</code></li>
+                        <li>脚本会自动爬取账号笔记并导入到RAG数据库</li>
+                        <li>建议设置环境变量 XHS_COOKIE 以获取完整内容</li>
+                    </ul>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #ff9800;">
+                    <h4 style="color: #e65100; margin-bottom: 10px;">🍪 Cookie管理</h4>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Cookie状态：</strong> <span id="cookieStatus">检查中...</span>
+                    </div>
+                    <div id="cookieInfo" style="font-size: 13px; color: #666; margin-bottom: 10px;">
+                        正在检查Cookie状态...
+                    </div>
+                    <div class="input-group" style="margin-bottom: 10px;">
+                        <label for="cookieInput">更新Cookie：</label>
+                        <textarea id="cookieInput" placeholder="粘贴从浏览器获取的小红书Cookie..." style="height: 80px;"></textarea>
+                    </div>
+                    <button class="btn" style="background: #ff9800; color: white; margin-right: 10px;" id="cookieUpdateBtn">保存Cookie</button>
+                    <button class="btn" style="background: #78909c; color: white;" id="cookieParseBtn">解析Cookie</button>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid #4caf50;">
+                    <h4 style="color: #2e7d32; margin-bottom: 10px;">🔄 定时更新</h4>
+                    <div style="margin-bottom: 10px;">
+                        <label for="updateInterval">更新间隔（分钟）：</label>
+                        <select id="updateInterval" style="padding: 6px; border-radius: 4px;">
+                            <option value="5">5分钟</option>
+                            <option value="15">15分钟</option>
+                            <option value="30">30分钟</option>
+                            <option value="60">1小时</option>
+                            <option value="180">3小时</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>状态：</strong> <span id="autoUpdateStatus"><span style="color: red;">已停止</span></span>
+                    </div>
+                    <button class="btn btn-primary" id="autoUpdateBtn">开启定时更新</button>
+                </div>
+            </div>
+            <div class="tab-content" id="analyzeTab">
+                <div class="input-group">
+                    <label for="analyzeText">要分析的文本：</label>
+                    <textarea id="analyzeText" placeholder="请输入要分析的文本内容..."></textarea>
+                </div>
+                <button class="btn btn-primary" id="analyzeBtn">开始分析</button>
+                <div class="loading" id="analyzeLoading"><div class="spinner"></div><p>正在分析文本...</p></div>
+                <div class="response" id="analyzeResponse">
+                    <h3>分析结果：</h3>
+                    <div id="sentimentBadge" class="sentiment-badge"></div>
+                    <p id="sentimentScore"></p>
+                    <h4 style="margin: 15px 0 10px;">关键词：</h4>
+                    <div id="keywordsList"></div>
+                    <h4 style="margin: 15px 0 10px;">摘要：</h4>
+                    <div class="response-content" id="summaryText"></div>
+                </div>
+            </div>
+            <div class="tab-content" id="importTab">
+                <div style="margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px;">
+                    <h4 style="color: #1976d2; margin-bottom: 10px;">📤 向量数据库导入</h4>
+                    <p style="color: #666; margin-bottom: 15px;">将数据库中的笔记导入到向量数据库，用于智能检索。</p>
+                    <button class="btn btn-primary" id="importBtn">开始导入</button>
+                    <button class="btn" style="background: #78909c; color: white; margin-left: 10px;" id="refreshNotesBtn">刷新笔记列表</button>
+                </div>
+                <div class="loading" id="importLoading"><div class="spinner"></div><p>正在导入数据...</p></div>
+                <div class="response" id="importResponse">
+                    <h3>导入结果：</h3>
+                    <div class="response-content" id="importResult"></div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <h4 style="margin-bottom: 15px;">📋 笔记列表</h4>
+                    <div id="notesList" style="max-height: 400px; overflow-y: auto;">
+                        <p>点击"刷新笔记列表"查看数据库中的笔记</p>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content" id="notesTab">
+                <div style="margin-bottom: 20px; padding: 15px; background: #e8f5e9; border-radius: 8px;">
+                    <h4 style="color: #2e7d32; margin-bottom: 10px;">📝 手动添加笔记</h4>
+                    <p style="color: #666; margin-bottom: 15px;">手动添加笔记到数据库，然后导入到向量数据库。</p>
+                </div>
+                <div class="input-group">
+                    <label for="noteId">笔记ID：</label>
+                    <input type="text" id="noteId" placeholder="笔记的唯一标识">
+                </div>
+                <div class="input-group">
+                    <label for="noteTitle">标题：</label>
+                    <input type="text" id="noteTitle" placeholder="笔记标题">
+                </div>
+                <div class="input-group">
+                    <label for="noteContent">内容：</label>
+                    <textarea id="noteContent" placeholder="笔记正文内容..."></textarea>
+                </div>
+                <div class="input-group">
+                    <label for="noteUrl">链接：</label>
+                    <input type="text" id="noteUrl" placeholder="笔记链接">
+                </div>
+                <div class="input-group">
+                    <label for="noteAuthor">作者：</label>
+                    <input type="text" id="noteAuthor" placeholder="作者昵称">
+                </div>
+                <button class="btn btn-primary" id="noteBtn">添加笔记</button>
+                <div class="response" id="noteResponse">
+                    <h3>添加成功！</h3>
+                    <p>笔记已添加到知识库</p>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Powered by Cloudflare Workers + Vectorize + Workers AI</p>
+        </div>
+    </div>
+    <script>
+        const API_BASE = '';
+        
+        async function checkApiStatus() {
+            try {
+                const response = await fetch(API_BASE + '/health');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('statusDot').classList.add('connected');
+                    document.getElementById('apiStatus').classList.add('connected');
+                    document.getElementById('statusText').textContent = 'API已连接';
+                } else {
+                    throw new Error('API返回错误');
+                }
+            } catch (error) {
+                document.getElementById('statusDot').classList.add('error');
+                document.getElementById('apiStatus').classList.add('error');
+                document.getElementById('statusText').textContent = 'API未连接: ' + error.message;
+            }
+        }
+        
+        document.querySelectorAll('.tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab').forEach(function(t) {
+                    t.classList.remove('active');
+                });
+                document.querySelectorAll('.tab-content').forEach(function(c) {
+                    c.classList.remove('active');
+                });
+                this.classList.add('active');
+                var tabName = this.getAttribute('data-tab');
+                document.getElementById(tabName + 'Tab').classList.add('active');
+            });
+        });
+        
+        document.getElementById('chatBtn').addEventListener('click', async function() {
+            const query = document.getElementById('chatQuery').value.trim();
+            const topK = parseInt(document.getElementById('topK').value);
+            if (!query) {
+                alert('请输入问题');
+                return;
+            }
+            
+            const btn = document.getElementById('chatBtn');
+            const loading = document.getElementById('chatLoading');
+            const responseDiv = document.getElementById('chatResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            responseDiv.classList.remove('show');
+            
+            try {
+                const res = await fetch(API_BASE + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query, top_k: topK })
+                });
+                const data = await res.json();
+                
+                document.getElementById('chatAnswer').textContent = data.answer || '暂无回答';
+                
+                const sourcesDiv = document.getElementById('chatSources');
+                if (data.sources && data.sources.length > 0) {
+                    var html = '<h4 style="margin: 20px 0 10px;">参考来源：</h4>';
+                    data.sources.forEach(function(source, i) {
+                        var score = (source.score * 100) || 0;
+                        html += '<div class="source-item"><h4>[' + (i+1) + '] ' + (source.title || '无标题') + '<span class="score">相似度: ' + score.toFixed(1) + '%</span></h4><p>' + (source.content || '无内容') + '</p>';
+                        if (source.url) {
+                            html += '<a href="' + source.url + '" target="_blank">查看原文</a>';
+                        }
+                        html += '</div>';
+                    });
+                    sourcesDiv.innerHTML = html;
+                } else {
+                    sourcesDiv.innerHTML = '<p>未找到相关来源</p>';
+                }
+                
+                responseDiv.classList.add('show');
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+        
+        document.getElementById('crawlBtn').addEventListener('click', async function() {
+            const userId = document.getElementById('crawlUserId').value.trim();
+            const maxNotes = parseInt(document.getElementById('crawlMaxNotes').value);
+            if (!userId) {
+                alert('请输入小红书账号ID');
+                return;
+            }
+            
+            const btn = document.getElementById('crawlBtn');
+            const loading = document.getElementById('crawlLoading');
+            const responseDiv = document.getElementById('crawlResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            responseDiv.classList.remove('show');
+            
+            try {
+                let localApiAvailable = false;
+                try {
+                    const healthRes = await fetch('http://localhost:5000/health');
+                    if (healthRes.ok) {
+                        localApiAvailable = true;
+                    }
+                } catch {
+                    localApiAvailable = false;
+                }
+
+                let res, data;
+                if (localApiAvailable) {
+                    res = await fetch('http://localhost:5000/api/crawl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId, max_notes: maxNotes })
+                    });
+                    data = await res.json();
+                } else {
+                    res = await fetch(API_BASE + '/api/crawl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId, max_notes: maxNotes })
+                    });
+                    data = await res.json();
+                }
+                
+                if (data.success) {
+                    var resultText = '✅ 爬取成功！\n\n';
+                    resultText += `📊 共获取 ${data.total} 篇笔记\n\n`;
+                    
+                    if (data.import_result) {
+                        resultText += `📤 导入结果：成功 ${data.import_result.successful} 篇，失败 ${data.import_result.failed} 篇\n\n`;
+                    }
+                    
+                    if (data.notes && data.notes.length > 0) {
+                        resultText += '📋 笔记列表：\n';
+                        data.notes.forEach(function(note, i) {
+                            resultText += `[${i+1}] ${note.title || '无标题'} (${note.content ? note.content.length : 0}字)\n`;
+                        });
+                    }
+                    
+                    document.getElementById('crawlResult').textContent = resultText;
+                } else {
+                    var errorMsg = '❌ 爬取失败：' + (data.error || '未知错误') + '\n\n';
+                    if (!localApiAvailable) {
+                        errorMsg += '💡 建议：\n';
+                        errorMsg += '1. 在终端运行：python api_server.py\n';
+                        errorMsg += '2. 确保已安装playwright：pip install playwright\n';
+                        errorMsg += '3. 设置环境变量XHS_COOKIE以获取完整内容\n';
+                        errorMsg += '4. 刷新页面后重试';
+                    }
+                    document.getElementById('crawlResult').textContent = errorMsg;
+                }
+                
+                responseDiv.classList.add('show');
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+        
+        document.getElementById('analyzeBtn').addEventListener('click', async function() {
+            const text = document.getElementById('analyzeText').value.trim();
+            if (!text) {
+                alert('请输入要分析的文本');
+                return;
+            }
+            
+            const btn = document.getElementById('analyzeBtn');
+            const loading = document.getElementById('analyzeLoading');
+            const responseDiv = document.getElementById('analyzeResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            responseDiv.classList.remove('show');
+            
+            try {
+                const res = await fetch(API_BASE + '/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                const data = await res.json();
+                
+                const sentimentBadge = document.getElementById('sentimentBadge');
+                const sentiment = data.sentiment ? data.sentiment.sentiment : 'neutral';
+                sentimentBadge.textContent = sentiment === 'positive' ? '正面' : sentiment === 'negative' ? '负面' : '中性';
+                sentimentBadge.className = 'sentiment-badge sentiment-' + sentiment;
+                
+                const score = data.sentiment ? data.sentiment.score : 0;
+                document.getElementById('sentimentScore').textContent = '情感分数: ' + score.toFixed(2);
+                
+                const keywordsList = document.getElementById('keywordsList');
+                var keywordsHtml = '';
+                (data.keywords || []).forEach(function(kw) {
+                    var keyword = typeof kw === 'string' ? kw : kw.name;
+                    keywordsHtml += '<span class="keyword-tag">' + keyword + '</span>';
+                });
+                keywordsList.innerHTML = keywordsHtml;
+                
+                document.getElementById('summaryText').textContent = data.sentiment ? (data.sentiment.summary || '无摘要') : '无摘要';
+                
+                responseDiv.classList.add('show');
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+        
+        document.getElementById('importBtn').addEventListener('click', async function() {
+            const btn = document.getElementById('importBtn');
+            const loading = document.getElementById('importLoading');
+            const responseDiv = document.getElementById('importResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            responseDiv.classList.remove('show');
+            
+            try {
+                const res = await fetch('http://localhost:5000/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('importResult').textContent = 
+                        `✅ 导入成功！\n\n📊 笔记数量: ${data.note_count} 篇\n📤 向量数量: ${data.vector_count} 个\n\n${data.message}`;
+                } else {
+                    document.getElementById('importResult').textContent = 
+                        `❌ 导入失败：${data.error}`;
+                }
+                
+                responseDiv.classList.add('show');
+            } catch (error) {
+                alert('请求失败: ' + error.message + '\n\n请确保本地API服务已启动');
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+
+        document.getElementById('refreshNotesBtn').addEventListener('click', async function() {
+            const btn = document.getElementById('refreshNotesBtn');
+            const notesList = document.getElementById('notesList');
+            
+            btn.disabled = true;
+            notesList.innerHTML = '<div class="loading"><div class="spinner" style="width: 20px; height: 20px;"></div><p style="font-size: 14px;">加载中...</p></div>';
+            
+            try {
+                const res = await fetch('http://localhost:5000/api/notes');
+                const data = await res.json();
+                
+                if (data.success && data.notes.length > 0) {
+                    var html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">';
+                    data.notes.forEach(function(note) {
+                        const contentPreview = note.content ? note.content.substring(0, 100) + (note.content.length > 100 ? '...' : '') : '无内容';
+                        html += `
+                            <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                                <h4 style="color: #333; margin-bottom: 8px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${note.title || '无标题'}</h4>
+                                <p style="color: #666; font-size: 13px; line-height: 1.5; margin-bottom: 10px;">${contentPreview}</p>
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #999;">
+                                    <span>作者: ${note.nickname || note.author || '未知'}</span>
+                                    <span>❤️ ${note.liked_count || 0}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    notesList.innerHTML = html;
+                } else {
+                    notesList.innerHTML = '<p style="color: #666;">数据库中暂无笔记</p>';
+                }
+            } catch (error) {
+                notesList.innerHTML = `<p style="color: red;">加载失败：${error.message}</p>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('noteBtn').addEventListener('click', async function() {
+            const note = {
+                note_id: document.getElementById('noteId').value.trim(),
+                title: document.getElementById('noteTitle').value.trim(),
+                content: document.getElementById('noteContent').value.trim(),
+                url: document.getElementById('noteUrl').value.trim(),
+                author: document.getElementById('noteAuthor').value.trim()
+            };
+            
+            if (!note.note_id || !note.content) {
+                alert('请填写笔记ID和内容');
+                return;
+            }
+            
+            try {
+                const res = await fetch('http://localhost:5000/api/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(note)
+                });
+                
+                if (res.ok) {
+                    document.getElementById('noteResponse').classList.add('show');
+                    document.querySelectorAll('#notesTab input, #notesTab textarea').forEach(function(el) {
+                        el.value = '';
+                    });
+                } else {
+                    throw new Error('添加失败');
+                }
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            }
+        });
+
+        async function checkCookieStatus() {
+            try {
+                const res = await fetch('http://localhost:5000/api/cookie');
+                const data = await res.json();
+                
+                const cookieStatus = document.getElementById('cookieStatus');
+                const cookieInfo = document.getElementById('cookieInfo');
+                
+                if (data.has_cookie) {
+                    cookieStatus.innerHTML = '<span style="color: green;">✓ Cookie已配置</span>';
+                    cookieInfo.innerHTML = `
+                        <p>Cookie长度: ${data.cookie_length} 字符</p>
+                        <p>Cookie预览: ${data.cookie_preview}</p>
+                        <p><strong>过期时间:</strong></p>
+                        <ul style="font-size: 12px; margin: 5px 0 0 20px;">
+                    `;
+                    for (const [key, date] of Object.entries(data.expires_info)) {
+                        const isExpired = new Date(date) < new Date();
+                        cookieInfo.innerHTML += `<li>${key}: ${date} ${isExpired ? '<span style="color:red;">(已过期)</span>' : ''}</li>`;
+                    }
+                    cookieInfo.innerHTML += '</ul>';
+                } else {
+                    cookieStatus.innerHTML = '<span style="color: red;">✗ Cookie未配置</span>';
+                    cookieInfo.innerHTML = '<p>请在下方输入Cookie</p>';
+                }
+            } catch {
+                document.getElementById('cookieStatus').innerHTML = '<span style="color: orange;">⚠️ 本地API未连接</span>';
+                document.getElementById('cookieInfo').innerHTML = '<p>请先启动本地API服务</p>';
+            }
+        }
+
+        document.getElementById('cookieUpdateBtn').addEventListener('click', async function() {
+            const cookie = document.getElementById('cookieInput').value.trim();
+            if (!cookie) {
+                alert('请输入Cookie');
+                return;
+            }
+            
+            try {
+                const res = await fetch('http://localhost:5000/api/cookie', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookie: cookie })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('cookieInput').value = '';
+                    checkCookieStatus();
+                } else {
+                    alert('更新失败: ' + data.error);
+                }
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            }
+        });
+
+        document.getElementById('cookieParseBtn').addEventListener('click', async function() {
+            const cookie = document.getElementById('cookieInput').value.trim();
+            if (!cookie) {
+                alert('请输入Cookie');
+                return;
+            }
+            
+            try {
+                const res = await fetch('http://localhost:5000/api/cookie/parse', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookie: cookie })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    var html = `<p>解析到 ${data.count} 个Cookie项:</p><ul>`;
+                    for (const [key, value] of Object.entries(data.cookies)) {
+                        html += `<li><strong>${key}:</strong> ${value.substring(0, 50)}${value.length > 50 ? '...' : ''}</li>`;
+                    }
+                    html += '</ul>';
+                    document.getElementById('cookieInfo').innerHTML = html;
+                } else {
+                    alert('解析失败: ' + data.error);
+                }
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            }
+        });
+
+        let updateInterval = null;
+        
+        document.getElementById('autoUpdateBtn').addEventListener('click', function() {
+            const userId = document.getElementById('crawlUserId').value.trim();
+            const interval = parseInt(document.getElementById('updateInterval').value);
+            
+            if (!userId) {
+                alert('请先输入小红书账号ID');
+                return;
+            }
+            
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+                document.getElementById('autoUpdateBtn').textContent = '开启定时更新';
+                document.getElementById('autoUpdateStatus').innerHTML = '<span style="color: red;">已停止</span>';
+                return;
+            }
+            
+            updateInterval = setInterval(async function() {
+                try {
+                    const res = await fetch('http://localhost:5000/api/crawl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId, max_notes: 10 })
+                    });
+                    const data = await res.json();
+                    
+                    const now = new Date().toLocaleString();
+                    document.getElementById('autoUpdateStatus').innerHTML = 
+                        `<span style="color: green;">运行中</span> - 上次更新: ${now}`;
+                    
+                    if (data.success) {
+                        console.log(`[定时更新] 成功获取 ${data.total} 篇笔记`);
+                    }
+                } catch (error) {
+                    console.error('[定时更新] 失败:', error);
+                }
+            }, interval * 60 * 1000);
+            
+            document.getElementById('autoUpdateBtn').textContent = '停止定时更新';
+            document.getElementById('autoUpdateStatus').innerHTML = 
+                `<span style="color: green;">运行中</span> - 每 ${interval} 分钟更新一次`;
+        });
+        
+        window.onload = function() {
+            checkApiStatus();
+            checkCookieStatus();
+        };
+    </script>
+</body>
+</html>

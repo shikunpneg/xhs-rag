@@ -1,0 +1,22 @@
+2026-06-18 16:51:01,676 - === 测试Flask爬取API ===
+2026-06-18 16:51:01,696 - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.11:5000
+2026-06-18 16:51:01,699 - [33mPress CTRL+C to quit[0m
+2026-06-18 16:52:43,509 - === 测试Flask爬取API ===
+2026-06-18 16:52:43,534 - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.11:5000
+2026-06-18 16:52:43,534 - [33mPress CTRL+C to quit[0m
+2026-06-18 16:52:56,785 - === 开始爬取账号: 5bd9405f6b58b737b5401d2e, 目标数量: 2
+2026-06-18 16:52:56,787 - 运行脚本: E:\rag\xhs-rag\scripts\crawl.py
+2026-06-18 16:53:46,763 - returncode: 0
+2026-06-18 16:53:46,763 - stdout (812 bytes):   已获取: 发现谈003：同一部作品里重复自己和他人...
+  已获取: 梁晓声：关仁山是一个我们亲爱和尊敬的名字...
+共获取 2 篇笔记
+已保存 2 篇笔记到数据库
+{"success": true, "total": 2, "notes": [{"note_id": "6a0fdaa10000000006021a2d", "title": "发现谈003：同一部作品里重复自己和他人", "
+2026-06-18 16:53:46,763 - 成功返回 2 条笔记
+2026-06-18 16:53:46,763 - 127.0.0.1 - - [18/Jun/2026 16:53:46] "POST /api/crawl HTTP/1.1" 200 -

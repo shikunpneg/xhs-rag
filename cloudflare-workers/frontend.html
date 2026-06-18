@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书 RAG 知识库</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 30px; text-align: center; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 1.1em; }
+        .content { padding: 30px; }
+        .api-status { background: #f0f0f0; padding: 15px; border-radius: 8px; margin-bottom: 30px; display: flex; align-items: center; gap: 10px; }
+        .api-status.connected { background: #e8f5e9; color: #2e7d32; }
+        .api-status.error { background: #ffebee; color: #c62828; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: #ff9800; }
+        .status-dot.connected { background: #4caf50; }
+        .status-dot.error { background: #f44336; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+        .tab { padding: 12px 24px; cursor: pointer; border: none; background: none; font-size: 16px; color: #666; border-bottom: 3px solid transparent; transition: all 0.3s; }
+        .tab:hover { color: #667eea; }
+        .tab.active { color: #667eea; border-bottom-color: #667eea; font-weight: 600; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
+        .input-group input, .input-group textarea { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s; }
+        .input-group input:focus, .input-group textarea:focus { outline: none; border-color: #667eea; }
+        .input-group textarea { min-height: 150px; resize: vertical; font-family: inherit; }
+        .btn { padding: 12px 32px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .response { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; display: none; }
+        .response.show { display: block; }
+        .response h3 { color: #333; margin-bottom: 15px; }
+        .response-content { background: white; padding: 15px; border-radius: 8px; line-height: 1.8; white-space: pre-wrap; }
+        .sources { margin-top: 20px; }
+        .source-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #667eea; }
+        .source-item h4 { color: #333; margin-bottom: 8px; }
+        .source-item p { color: #666; line-height: 1.6; }
+        .source-item a { color: #667eea; text-decoration: none; display: inline-block; margin-top: 8px; }
+        .source-item a:hover { text-decoration: underline; }
+        .source-item .score { float: right; font-size: 12px; color: #999; }
+        .loading { display: none; text-align: center; margin-top: 20px; }
+        .loading.show { display: block; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .sentiment-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: 600; margin-bottom: 10px; }
+        .sentiment-positive { background: #e8f5e9; color: #2e7d32; }
+        .sentiment-negative { background: #ffebee; color: #c62828; }
+        .sentiment-neutral { background: #f5f5f5; color: #666; }
+        .keyword-tag { display: inline-block; padding: 4px 12px; background: #e3f2fd; color: #1976d2; border-radius: 16px; margin: 4px; font-size: 14px; }
+        .footer { text-align: center; padding: 20px; background: #f5f5f5; color: #999; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 小红书 RAG 知识库</h1>
+            <p>基于Cloudflare Workers的智能问答系统</p>
+        </div>
+        <div class="content">
+            <div class="api-status" id="apiStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">检查API连接...</span>
+            </div>
+            <div class="tabs">
+                <button class="tab active" data-tab="chat">💬 智能问答</button>
+                <button class="tab" data-tab="crawl">🔍 数据采集</button>
+                <button class="tab" data-tab="analyze">📊 情感分析</button>
+                <button class="tab" data-tab="notes">📝 手动添加</button>
+            </div>
+            <div class="tab-content active" id="chatTab">
+                <div class="input-group">
+                    <label for="chatQuery">您的问题：</label>
+                    <input type="text" id="chatQuery" placeholder="例如：贾浅浅是谁？">
+                </div>
+                <div class="input-group">
+                    <label for="topK">检索数量：</label>
+                    <input type="number" id="topK" value="5" min="1" max="10" style="width: 100px;">
+                </div>
+                <button class="btn btn-primary" id="chatBtn" onclick="handleChat()">开始问答</button>
+                <div class="loading" id="chatLoading"><div class="spinner"></div><p>正在检索并生成回答...</p></div>
+                <div class="response" id="chatResponse">
+                    <h3>💡 AI回答：</h3>
+                    <div class="response-content" id="chatAnswer"></div>
+                    <div class="sources" id="chatSources"></div>
+                </div>
+            </div>
+            <div class="tab-content" id="crawlTab">
+                <div class="input-group">
+                    <label for="crawlUserId">小红书账号ID：</label>
+                    <input type="text" id="crawlUserId" placeholder="例如：5d8e2f3a4b5c6d7e8f9a0b1c">
+                    <p style="font-size: 12px; color: #666; margin-top: 5px;">如何获取账号ID？打开小红书用户主页，URL中的数字串即为账号ID</p>
+                </div>
+                <div class="input-group">
+                    <label for="crawlMaxNotes">最大爬取数量：</label>
+                    <input type="number" id="crawlMaxNotes" value="20" min="1" max="100" style="width: 100px;">
+                </div>
+                <button class="btn btn-primary" id="crawlBtn" onclick="handleCrawl()">开始爬取</button>
+                <div class="loading" id="crawlLoading"><div class="spinner"></div><p>正在爬取数据...</p></div>
+                <div class="response" id="crawlResponse">
+                    <h3>📊 采集结果：</h3>
+                    <div class="response-content" id="crawlResult"></div>
+                </div>
+                <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px;">
+                    <h4 style="color: #1976d2; margin-bottom: 10px;">使用说明</h4>
+                    <ul style="color: #333; margin-left: 20px; line-height: 1.8;">
+                        <li>爬取需要在本地运行脚本，前端仅显示状态</li>
+                        <li>请在终端运行：<code style="background: white; padding: 2px 6px; border-radius: 4px;">python crawl_account.py</code></li>
+                        <li>脚本会自动爬取账号笔记并导入到RAG数据库</li>
+                        <li>建议设置环境变量 XHS_COOKIE 以获取完整内容</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="tab-content" id="analyzeTab">
+                <div class="input-group">
+                    <label for="analyzeText">要分析的文本：</label>
+                    <textarea id="analyzeText" placeholder="请输入要分析的文本内容..."></textarea>
+                </div>
+                <button class="btn btn-primary" id="analyzeBtn" onclick="handleAnalyze()">开始分析</button>
+                <div class="loading" id="analyzeLoading"><div class="spinner"></div><p>正在分析文本...</p></div>
+                <div class="response" id="analyzeResponse">
+                    <h3>📊 分析结果：</h3>
+                    <div id="sentimentBadge" class="sentiment-badge"></div>
+                    <p id="sentimentScore"></p>
+                    <h4 style="margin: 15px 0 10px;">关键词：</h4>
+                    <div id="keywordsList"></div>
+                    <h4 style="margin: 15px 0 10px;">摘要：</h4>
+                    <div class="response-content" id="summaryText"></div>
+                </div>
+            </div>
+            <div class="tab-content" id="notesTab">
+                <div class="input-group">
+                    <label for="noteId">笔记ID：</label>
+                    <input type="text" id="noteId" placeholder="笔记的唯一标识">
+                </div>
+                <div class="input-group">
+                    <label for="noteTitle">标题：</label>
+                    <input type="text" id="noteTitle" placeholder="笔记标题">
+                </div>
+                <div class="input-group">
+                    <label for="noteContent">内容：</label>
+                    <textarea id="noteContent" placeholder="笔记正文内容..."></textarea>
+                </div>
+                <div class="input-group">
+                    <label for="noteUrl">链接：</label>
+                    <input type="text" id="noteUrl" placeholder="笔记链接">
+                </div>
+                <div class="input-group">
+                    <label for="noteAuthor">作者：</label>
+                    <input type="text" id="noteAuthor" placeholder="作者昵称">
+                </div>
+                <button class="btn btn-primary" id="noteBtn" onclick="handleAddNote()">添加笔记</button>
+                <div class="response" id="noteResponse">
+                    <h3>✅ 添加成功！</h3>
+                    <p>笔记已添加到知识库</p>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Powered by Cloudflare Workers + Vectorize + Workers AI</p>
+        </div>
+    </div>
+    <script>
+        const API_BASE = '';
+        
+        async function checkApiStatus() {
+            try {
+                const response = await fetch(API_BASE + '/health');
+                if (response.ok) {
+                    document.getElementById('statusDot').classList.add('connected');
+                    document.getElementById('apiStatus').classList.add('connected');
+                    document.getElementById('statusText').textContent = 'API已连接';
+                } else { throw new Error('API返回错误'); }
+            } catch (error) {
+                document.getElementById('statusDot').classList.add('error');
+                document.getElementById('apiStatus').classList.add('error');
+                document.getElementById('statusText').textContent = 'API未连接';
+            }
+        }
+        
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById(this.dataset.tab + 'Tab').classList.add('active');
+            });
+        });
+        
+        async function handleChat() {
+            const query = document.getElementById('chatQuery').value.trim();
+            const topK = parseInt(document.getElementById('topK').value);
+            if (!query) { alert('请输入问题'); return; }
+            
+            const btn = document.getElementById('chatBtn');
+            const loading = document.getElementById('chatLoading');
+            const response = document.getElementById('chatResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            response.classList.remove('show');
+            
+            try {
+                const res = await fetch(API_BASE + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, top_k: topK })
+                });
+                const data = await res.json();
+                
+                document.getElementById('chatAnswer').textContent = data.answer || '暂无回答';
+                
+                const sourcesDiv = document.getElementById('chatSources');
+                if (data.sources && data.sources.length > 0) {
+                    sourcesDiv.innerHTML = '<h4 style="margin: 20px 0 10px;">参考来源：</h4>' + data.sources.map((source, i) => '<div class="source-item"><h4>[' + (i+1) + '] ' + (source.title || '无标题') + '<span class="score">相似度: ' + ((source.score * 100) || 0).toFixed(1) + '%</span></h4><p>' + (source.content || '无内容') + '</p>' + (source.url ? '<a href="' + source.url + '" target="_blank">查看原文</a>' : '') + '</div>').join('');
+                } else { 
+                    sourcesDiv.innerHTML = '<p>未找到相关来源</p>'; 
+                }
+                
+                response.classList.add('show');
+            } catch (error) { 
+                alert('请求失败: ' + error.message); 
+            } finally { 
+                btn.disabled = false; 
+                loading.classList.remove('show'); 
+            }
+        }
+        
+        async function handleCrawl() {
+            const userId = document.getElementById('crawlUserId').value.trim();
+            const maxNotes = parseInt(document.getElementById('crawlMaxNotes').value);
+            if (!userId) { alert('请输入小红书账号ID'); return; }
+            
+            const btn = document.getElementById('crawlBtn');
+            const loading = document.getElementById('crawlLoading');
+            const response = document.getElementById('crawlResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            response.classList.remove('show');
+            
+            try {
+                document.getElementById('crawlResult').textContent = '爬取需要在本地运行脚本。请打开终端执行：\n\npython crawl_account.py\n\n然后按照提示输入账号ID即可。\n\n脚本会自动：\n1. 爬取账号的所有笔记\n2. 保存到本地数据库\n3. 导入到Vectorize向量数据库\n4. 更新RAG知识库';
+                response.classList.add('show');
+            } catch (error) { 
+                alert('请求失败: ' + error.message); 
+            } finally { 
+                btn.disabled = false; 
+                loading.classList.remove('show'); 
+            }
+        }
+        
+        async function handleAnalyze() {
+            const text = document.getElementById('analyzeText').value.trim();
+            if (!text) { alert('请输入要分析的文本'); return; }
+            
+            const btn = document.getElementById('analyzeBtn');
+            const loading = document.getElementById('analyzeLoading');
+            const response = document.getElementById('analyzeResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            response.classList.remove('show');
+            
+            try {
+                const res = await fetch(API_BASE + '/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                const data = await res.json();
+                
+                const sentimentBadge = document.getElementById('sentimentBadge');
+                sentimentBadge.textContent = data.sentiment?.sentiment === 'positive' ? '正面' : data.sentiment?.sentiment === 'negative' ? '负面' : '中性';
+                sentimentBadge.className = 'sentiment-badge sentiment-' + (data.sentiment?.sentiment || 'neutral');
+                
+                document.getElementById('sentimentScore').textContent = '情感分数: ' + ((data.sentiment?.score || 0)).toFixed(2);
+                
+                const keywordsList = document.getElementById('keywordsList');
+                keywordsList.innerHTML = (data.keywords || []).map(kw => '<span class="keyword-tag">' + (typeof kw === 'string' ? kw : kw.name) + '</span>').join('');
+                
+                document.getElementById('summaryText').textContent = data.sentiment?.summary || '无摘要';
+                
+                response.classList.add('show');
+            } catch (error) { 
+                alert('请求失败: ' + error.message); 
+            } finally { 
+                btn.disabled = false; 
+                loading.classList.remove('show'); 
+            }
+        }
+        
+        async function handleAddNote() {
+            const note = { 
+                note_id: document.getElementById('noteId').value.trim(), 
+                title: document.getElementById('noteTitle').value.trim(), 
+                content: document.getElementById('noteContent').value.trim(), 
+                url: document.getElementById('noteUrl').value.trim(), 
+                author: document.getElementById('noteAuthor').value.trim() 
+            };
+            
+            if (!note.note_id || !note.content) { 
+                alert('请填写笔记ID和内容'); 
+                return; 
+            }
+            
+            try {
+                const res = await fetch(API_BASE + '/api/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(note)
+                });
+                
+                if (res.ok) { 
+                    document.getElementById('noteResponse').classList.add('show'); 
+                    document.querySelectorAll('#notesTab input, #notesTab textarea').forEach(el => el.value = ''); 
+                } else { 
+                    throw new Error('添加失败'); 
+                }
+            } catch (error) { 
+                alert('请求失败: ' + error.message); 
+            }
+        }
+        
+        window.onload = checkApiStatus;
+    </script>
+</body>
+</html>

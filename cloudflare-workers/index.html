@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书 RAG 知识库</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .api-status {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .api-status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .api-status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff9800;
+        }
+        
+        .status-dot.connected {
+            background: #4caf50;
+        }
+        
+        .status-dot.error {
+            background: #f44336;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            color: #667eea;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .input-group input,
+        .input-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .input-group input:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .input-group textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        .btn {
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .response.show {
+            display: block;
+        }
+        
+        .response h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .response-content {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+        
+        .sources {
+            margin-top: 20px;
+        }
+        
+        .source-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .source-item h4 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .source-item p {
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        .source-item a {
+            color: #667eea;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 8px;
+        }
+        
+        .source-item a:hover {
+            text-decoration: underline;
+        }
+        
+        .score {
+            display: inline-block;
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .sentiment-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+        
+        .sentiment-positive {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .sentiment-neutral {
+            background: #f5f5f5;
+            color: #666;
+        }
+        
+        .sentiment-negative {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .keywords {
+            margin-top: 15px;
+        }
+        
+        .keyword-tag {
+            display: inline-block;
+            background: #e1bee7;
+            color: #6a1b9a;
+            padding: 6px 12px;
+            border-radius: 20px;
+            margin: 4px;
+            font-size: 14px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            border-top: 1px solid #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 小红书 RAG 知识库</h1>
+            <p>基于Cloudflare Workers的智能问答系统</p>
+        </div>
+        
+        <div class="content">
+            <div class="api-status" id="apiStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">检查API连接...</span>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('chat')">💬 智能问答</button>
+                <button class="tab" onclick="switchTab('analyze')">📊 情感分析</button>
+                <button class="tab" onclick="switchTab('notes')">📝 笔记管理</button>
+            </div>
+            
+            <!-- 智能问答 -->
+            <div class="tab-content active" id="chatTab">
+                <div class="input-group">
+                    <label for="chatQuery">请输入你的问题：</label>
+                    <textarea id="chatQuery" placeholder="例如：贾浅浅是谁？请介绍一下她的作品..."></textarea>
+                </div>
+                
+                <div class="input-group">
+                    <label for="topK">检索数量：</label>
+                    <input type="number" id="topK" value="5" min="1" max="20" style="width: 100px;">
+                </div>
+                
+                <button class="btn btn-primary" id="chatBtn" onclick="handleChat()">开始问答</button>
+                
+                <div class="loading" id="chatLoading">
+                    <div class="spinner"></div>
+                    <p>AI正在思考中...</p>
+                </div>
+                
+                <div class="response" id="chatResponse">
+                    <h3>🤖 AI回答：</h3>
+                    <div class="response-content" id="chatAnswer"></div>
+                    
+                    <div class="sources" id="chatSources"></div>
+                </div>
+            </div>
+            
+            <!-- 情感分析 -->
+            <div class="tab-content" id="analyzeTab">
+                <div class="input-group">
+                    <label for="analyzeText">请输入要分析的文本：</label>
+                    <textarea id="analyzeText" placeholder="输入一段文字，我会分析其中的情感倾向和关键词..."></textarea>
+                </div>
+                
+                <button class="btn btn-primary" id="analyzeBtn" onclick="handleAnalyze()">开始分析</button>
+                
+                <div class="loading" id="analyzeLoading">
+                    <div class="spinner"></div>
+                    <p>正在分析...</p>
+                </div>
+                
+                <div class="response" id="analyzeResponse">
+                    <h3>📊 分析结果：</h3>
+                    
+                    <div style="margin: 20px 0;">
+                        <span class="sentiment-badge" id="sentimentBadge">中性</span>
+                        <span id="sentimentScore" style="font-weight: 600;"></span>
+                    </div>
+                    
+                    <div class="keywords" id="keywordsList"></div>
+                    
+                    <div style="margin-top: 20px;">
+                        <h4 style="margin-bottom: 10px;">📝 摘要：</h4>
+                        <p id="summaryText"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 笔记管理 -->
+            <div class="tab-content" id="notesTab">
+                <div class="input-group">
+                    <label for="noteId">笔记ID：</label>
+                    <input type="text" id="noteId" placeholder="输入笔记ID">
+                </div>
+                
+                <div class="input-group">
+                    <label for="noteTitle">标题：</label>
+                    <input type="text" id="noteTitle" placeholder="输入笔记标题">
+                </div>
+                
+                <div class="input-group">
+                    <label for="noteContent">内容：</label>
+                    <textarea id="noteContent" placeholder="输入笔记内容"></textarea>
+                </div>
+                
+                <div class="input-group">
+                    <label for="noteUrl">链接：</label>
+                    <input type="text" id="noteUrl" placeholder="输入笔记链接">
+                </div>
+                
+                <div class="input-group">
+                    <label for="noteAuthor">作者：</label>
+                    <input type="text" id="noteAuthor" placeholder="输入作者名称">
+                </div>
+                
+                <button class="btn btn-primary" onclick="handleAddNote()">添加笔记</button>
+                
+                <div class="response" id="noteResponse">
+                    <h3>✅ 添加成功！</h3>
+                    <p>笔记已添加到向量数据库。</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Powered by Cloudflare Workers + Vectorize + Workers AI</p>
+        </div>
+    </div>
+    
+    <script>
+        // API地址 - 部署后替换为你的workers地址
+        const API_BASE = 'http://localhost:8787'; // 本地开发
+        
+        // 检查API连接
+        async function checkApiStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    document.getElementById('statusDot').classList.add('connected');
+                    document.getElementById('apiStatus').classList.add('connected');
+                    document.getElementById('statusText').textContent = 'API已连接';
+                } else {
+                    throw new Error('API返回错误');
+                }
+            } catch (error) {
+                document.getElementById('statusDot').classList.add('error');
+                document.getElementById('apiStatus').classList.add('error');
+                document.getElementById('statusText').textContent = 'API未连接，请先启动wrangler dev';
+            }
+        }
+        
+        // 切换标签页
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`${tabName}Tab`).classList.add('active');
+        }
+        
+        // 处理聊天
+        async function handleChat() {
+            const query = document.getElementById('chatQuery').value.trim();
+            const topK = parseInt(document.getElementById('topK').value);
+            
+            if (!query) {
+                alert('请输入问题');
+                return;
+            }
+            
+            const btn = document.getElementById('chatBtn');
+            const loading = document.getElementById('chatLoading');
+            const response = document.getElementById('chatResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            response.classList.remove('show');
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, top_k: topK })
+                });
+                
+                const data = await res.json();
+                
+                document.getElementById('chatAnswer').textContent = data.answer || '暂无回答';
+                
+                // 显示来源
+                const sourcesDiv = document.getElementById('chatSources');
+                if (data.sources && data.sources.length > 0) {
+                    sourcesDiv.innerHTML = '<h4 style="margin: 20px 0 10px;">📚 参考来源：</h4>' + 
+                        data.sources.map((source, i) => `
+                            <div class="source-item">
+                                <h4>[${i+1}] ${source.title || '无标题'}<span class="score">相似度: ${(source.score * 100).toFixed(1)}%</span></h4>
+                                <p>${source.content || '无内容'}</p>
+                                ${source.url ? `<a href="${source.url}" target="_blank">查看原文</a>` : ''}
+                            </div>
+                        `).join('');
+                } else {
+                    sourcesDiv.innerHTML = '<p>未找到相关来源</p>';
+                }
+                
+                response.classList.add('show');
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+        
+        // 处理情感分析
+        async function handleAnalyze() {
+            const text = document.getElementById('analyzeText').value.trim();
+            
+            if (!text) {
+                alert('请输入要分析的文本');
+                return;
+            }
+            
+            const btn = document.getElementById('analyzeBtn');
+            const loading = document.getElementById('analyzeLoading');
+            const response = document.getElementById('analyzeResponse');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            response.classList.remove('show');
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                
+                const data = await res.json();
+                
+                // 显示情感分析结果
+                const sentimentBadge = document.getElementById('sentimentBadge');
+                sentimentBadge.textContent = data.sentiment?.sentiment === 'positive' ? '😊 正面' : 
+                                            data.sentiment?.sentiment === 'negative' ? '😞 负面' : '😐 中性';
+                sentimentBadge.className = `sentiment-badge sentiment-${data.sentiment?.sentiment || 'neutral'}`;
+                
+                document.getElementById('sentimentScore').textContent = 
+                    `情感分数: ${(data.sentiment?.score || 0).toFixed(2)}`;
+                
+                // 显示关键词
+                const keywordsList = document.getElementById('keywordsList');
+                keywordsList.innerHTML = (data.keywords || []).map(kw => 
+                    `<span class="keyword-tag">${typeof kw === 'string' ? kw : kw.name}</span>`
+                ).join('');
+                
+                document.getElementById('summaryText').textContent = data.sentiment?.summary || '无摘要';
+                
+                response.classList.add('show');
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+        
+        // 添加笔记
+        async function handleAddNote() {
+            const note = {
+                note_id: document.getElementById('noteId').value.trim(),
+                title: document.getElementById('noteTitle').value.trim(),
+                content: document.getElementById('noteContent').value.trim(),
+                url: document.getElementById('noteUrl').value.trim(),
+                author: document.getElementById('noteAuthor').value.trim()
+            };
+            
+            if (!note.note_id || !note.content) {
+                alert('请填写笔记ID和内容');
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/notes`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(note)
+                });
+                
+                if (res.ok) {
+                    document.getElementById('noteResponse').classList.add('show');
+                    // 清空表单
+                    document.querySelectorAll('#notesTab input, #notesTab textarea').forEach(el => el.value = '');
+                } else {
+                    throw new Error('添加失败');
+                }
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            }
+        }
+        
+        // 页面加载时检查API状态
+        window.onload = checkApiStatus;
+    </script>
+</body>
+</html>

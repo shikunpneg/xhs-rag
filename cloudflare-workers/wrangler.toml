@@ -1,0 +1,44 @@
+name = "xhs-rag"
+main = "src/index.js"
+compatibility_date = "2026-06-18"
+compatibility_flags = ["nodejs_compat"]
+account_id = "7c8778315993ece8b0f06929771a3f4f"
+
+# 静态文件目录
+[assets]
+bucket_name = "public"
+directory = "./public"
+
+# Vectorize向量数据库配置
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "xhs-embeddings-v2"
+
+# Workers AI配置
+[ai]
+binding = "AI"
+
+# Browser Rendering配置
+[browser]
+binding = "BROWSER"
+
+# KV命名空间配置（用于存储Cookie和配置）
+[[kv_namespaces]]
+binding = "KV_CONFIG"
+id = "ef8dfb73acbf4430a4a5e85828c89d46"
+preview_id = "ef8dfb73acbf4430a4a5e85828c89d46"
+
+# Cron定时任务配置（每天凌晨2点运行）
+[triggers]
+crons = [
+  "0 2 * * *"
+]
+
+# 环境变量
+[vars]
+DEEPSEEK_API_KEY = "sk-87ca71c098b14a68a12e2b4461bd986a"
+DEFAULT_TOP_K = "5"
+MAX_CONTEXT_LENGTH = "2000"
+XHS_COOKIE = "a1=19d6bf7363c7fujl2aqmp3ptr64pvf8xygkyu4gsy50000281379; abRequestId=23055899-6f81-5c09-b6c7-cdab7ec04efa; acw_tc=0a5086db17817695210324026e1d325ce29bf428712ad1a2f7df7d8dac4d32; customerClientId=240973145393815; ets=1780970126692; gid=yjfKDiW4WWvyyjfKDiWqKk4kqSWi7V1J0A6UTMvqU9FK4v28UhiYC7888JYyqWj8SKy4ijDY; id_token=VjEAADmNq2BOd1jLRpsRM/lvRYFheYBKIhF5cutOJKeP6tUWvKo9w3BfKjJ1JIeLrwARFSdWf4C5cbbKrI4rUFvNAc5svXBgFlzVhoNQ9MehT0BiCTT9hDut/oDFT0hk2X37Y+ZV; loadts=1781767233339; sec_poison_id=73011612-4f1b-4127-b878-3f5c5236b19e; unread={%22ub%22:%226a26e61e000000002003bfd0%22%2C%22ue%22:%226a2d06520000000022022acf%22%2C%22uc%22:20}; web_session=040069b4d314487305a10c4ae33b4b030dee19; webBuild=6.20.2; webId=0a09f0c8467b7e1879da63b0bc6ce681; websectiga=a9bdcaed0af874f3a1431e94fbea410e8f738542fbb02df1e8e30c29ef3d91ac; x-user-id-creator.xiaohongshu.com=65a7570000000000080155f7; xsecappid=xhs-pc-web"
+# Browserless.io API Key（免费计划每月6小时）
+BROWSERLESS_API_KEY = "2Uj8ThxDmKCMJsce87f275f0b8693d659ae46dbfd792f3456"

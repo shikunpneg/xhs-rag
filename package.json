@@ -1,0 +1,25 @@
+{
+  "name": "xhs-rag",
+  "version": "1.0.0",
+  "description": "小红书 RAG 知识库系统",
+  "type": "module",
+  "scripts": {
+    "crawl": "npx tsx scripts/crawl.ts",
+    "ingest": "npx tsx scripts/ingest.ts",
+    "chat": "npx tsx scripts/chat.ts",
+    "mcp": "npx @anthropic-fans/xhs-mcp"
+  },
+  "dependencies": {
+    "@anthropic-fans/xhs-mcp": "^1.0.0",
+    "better-sqlite3": "^11.0.0",
+    "chromadb": "^1.8.0",
+    "dotenv": "^16.4.0",
+    "openai": "^4.50.0",
+    "tsx": "^4.10.0",
+    "typescript": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^20.0.0"
+  }
+}
