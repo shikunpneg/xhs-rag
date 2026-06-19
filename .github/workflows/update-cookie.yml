@@ -46,6 +46,9 @@ jobs:
       - name: Get fresh cookies from Xiaohongshu
         id: get-cookies
         run: |
+          # 设置NODE_PATH确保能找到全局安装的playwright
+          export NODE_PATH=$(npm root -g)
+          echo "NODE_PATH=$NODE_PATH"
           node -e "
           const { chromium } = require('playwright');
           (async () => {
@@ -75,9 +78,7 @@ jobs:
             }
             await browser.close();
           })();
-          " > output.log 2>&1
-
-          cat output.log
+          " 2>&1 | tee output.log
 
           if grep -q "SUCCESS" output.log; then
             COOKIE=$(grep "^COOKIE:" output.log | sed 's/^COOKIE://')
